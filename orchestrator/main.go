@@ -14,13 +14,23 @@ import (
 
 const DEVNET_PARAMS = "3:2"
 
-func run() {
-	dockerClient, err := client.NewEnvClient()
+type Node struct {
+	Host string
+	Id   string
+}
+
+var dockerClient *client.Client
+
+func InitDockerClient() {
+	var err error
+	dockerClient, err = client.NewEnvClient()
 	if err != nil {
 		fmt.Println("Unable to create docker client")
 		log.Fatal(err)
 	}
+}
 
+func CreateSeed() (Node, error) {
 	seedNodeHost, seedNodeId, _, _, err := CreateFullnode(
 		dockerClient,
 		"go_seed",
@@ -34,9 +44,51 @@ func run() {
 		nil,
 	)
 	if err != nil {
+		return Node{}, err
+	}
+
+	return Node{
+		Host: seedNodeHost,
+		Id:   seedNodeId,
+	}, nil
+}
+
+func ActivateSporks(target *RpcTarget) error {
+	err := Spork(target, "SPORK_2_INSTANTSEND_ENABLED", 0)
+	if err != nil {
+		return err
+	}
+	err = Spork(target, "SPORK_3_INSTANTSEND_BLOCK_FILTERING", 0)
+	if err != nil {
+		return err
+	}
+	err = Spork(target, "SPORK_9_SUPERBLOCKS_ENABLED", 0)
+	if err != nil {
+		return err
+	}
+	err = Spork(target, "SPORK_17_QUORUM_DKG_ENABLED", 0)
+	if err != nil {
+		return err
+	}
+	err = Spork(target, "SPORK_19_CHAINLOCKS_ENABLED", 0)
+	if err != nil {
+		return err
+	}
+	//Spork(targetSeedNode, "SPORK_21_QUORUM_ALL_CONNECTED", 0)
+	//Spork(targetSeedNode, "SPORK_23_QUORUM_POSE", 0)
+	return nil
+}
+
+func run() {
+	InitDockerClient()
+
+	seedNode, err := CreateSeed()
+	targetSeedNode := TargetFromHost(seedNode.Host)
+
+	err = ActivateSporks(targetSeedNode)
+	if err != nil {
 		log.Fatal(err)
 	}
-	targetSeedNode := TargetFromHost(seedNodeHost)
 
 	// Generate some initial blocks
 	Generate(targetSeedNode, 200)
@@ -47,29 +99,6 @@ func run() {
 	for _, mnode := range masternodes {
 		WaitForSync(mnode.Target)
 	}
-
-	err = Spork(targetSeedNode, "SPORK_2_INSTANTSEND_ENABLED", 0)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = Spork(targetSeedNode, "SPORK_3_INSTANTSEND_BLOCK_FILTERING", 0)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = Spork(targetSeedNode, "SPORK_9_SUPERBLOCKS_ENABLED", 0)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = Spork(targetSeedNode, "SPORK_17_QUORUM_DKG_ENABLED", 0)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = Spork(targetSeedNode, "SPORK_19_CHAINLOCKS_ENABLED", 0)
-	if err != nil {
-		log.Fatal(err)
-	}
-	//Spork(targetSeedNode, "SPORK_21_QUORUM_ALL_CONNECTED", 0)
-	//Spork(targetSeedNode, "SPORK_23_QUORUM_POSE", 0)
 
 	initialChainlock := <-MineUntilChainlock(targetSeedNode)
 
@@ -110,7 +139,7 @@ func run() {
 		StopMongo(dockerClient, mnode)
 	}
 
-	dockerClient.ContainerStop(context.Background(), seedNodeId, nil)
+	dockerClient.ContainerStop(context.Background(), seedNode.Id, nil)
 	for _, mnode := range masternodes {
 		dockerClient.ContainerStop(context.Background(), mnode.ContainerId, nil)
 	}
