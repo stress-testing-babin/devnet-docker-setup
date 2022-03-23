@@ -1,0 +1,8 @@
+#!/bin/sh
+#
+# cli <HOST> <METHOD>
+
+HOST=$1
+shift
+
+docker run -it --network=devnet dashpay/dashd:0.17 dash-cli -rpcport=20002 -rpcconnect="$HOST" -rpcuser=dashrpc -rpcpassword=rpcpassword $@

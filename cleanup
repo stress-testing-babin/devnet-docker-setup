@@ -1,5 +1,0 @@
-#!/bin/sh
-
-docker stop $(docker container ls -f name=^go_ -q)
-docker container prune -f
-docker volume prune -f
